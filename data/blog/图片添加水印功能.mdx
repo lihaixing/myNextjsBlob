@@ -1,0 +1,237 @@
+---
+title: 照片添加水印功能
+date: '2024-01-13'
+tags:
+  - js
+  - canvas
+  - react
+  - 前端
+---
+
+## 核心代码
+```js
+import EXIF from "exif-js";
+
+// 入口
+const waterMarkToPanel = async (panelFile, waterMarkFile) => {
+  const orientation = await getOrientation(panelFile);
+
+  const panelBase64Url = await getBase64(panelFile);
+
+  const waterMarkBase64Url = await getBase64(waterMarkFile);
+
+  // 获取panel图片的原生宽度、高度、图片元素
+  const panelNatureData = await getNatureData(panelBase64Url);
+
+  // 获取水印图片的原生宽度、高度、图片元素
+  const waterMarkNatureData = await getNatureData(waterMarkBase64Url);
+
+  // 处理画布旋转/加水印
+  return startDraw(orientation, panelNatureData, waterMarkNatureData);
+};
+
+
+// 开始处理画布并加水印
+const startDraw = (orientation, panelNatureData, waterMarkNatureData) => {
+
+  const canvas = document.createElement("canvas");
+
+  const ctx: any = canvas.getContext("2d");
+
+  // panel图片数据
+  const { naturalWidth, naturalHeight, element: panelEle} =  panelNatureData;
+
+  // waterMark图片数据
+  const { naturalWidth: wNatureWidth, naturalHeight: wNatureHeight, element: waterMarkEle} =  waterMarkNatureData;
+
+  // 处理画布旋转, 移动端存在一些兼容性，ios之类
+  switch (Number(orientation)) {
+    case 6:
+      console.log("照片顺时针旋转了270度");
+      canvas.width = naturalHeight; // 注意这里，canvas宽度实际取的是图片高度，因为图片的方位是旋转过270度的，以下类试
+      canvas.height = naturalWidth;
+
+      ctx.rotate((90 * Math.PI) / 180); // 既然照片方位顺时针转了270度，那再转90度，相当于一共转了360度，相当于没转，这是方位就正确了
+      ctx.translate(0, -canvas.width); // 转了90度，是不是位置也变了，想想图片在第一象限，绕原点顺时针转了90度，那就转到第二象限了，那就需要超y方向移上去
+      ctx.drawImage(panelEle, 0, 0, canvas.height, canvas.width); // 画图
+      // 恢复坐标 画完图，需要将canvas恢复原位，不解释了，有点绕
+      ctx.translate(0, canvas.width);
+      ctx.rotate((-90 * Math.PI) / 180);
+      break;
+    case 8:
+      console.log("照片顺时针旋转90度");
+      canvas.width = naturalHeight;
+      canvas.height = naturalWidth;
+      ctx.rotate((-90 * Math.PI) / 180);
+      ctx.translate(-canvas.height, 0);
+      ctx.drawImage(panelEle, 0, 0, canvas.height, canvas.width);
+
+      // 恢复坐标
+      ctx.translate(canvas.height, 0);
+      ctx.rotate((90 * Math.PI) / 180);
+      break;
+    case 3:
+      console.log("照片顺时针旋转180度");
+      canvas.width = naturalWidth;
+      canvas.height = naturalHeight;
+      ctx.rotate((180 * Math.PI) / 180);
+      ctx.translate(-canvas.width, -canvas.height);
+      ctx.drawImage(panelEle, 0, 0, canvas.width, canvas.height);
+
+      // 恢复坐标
+      ctx.translate(canvas.width, canvas.height);
+      ctx.rotate((-180 * Math.PI) / 180);
+      break;
+    default:
+      canvas.width = naturalWidth;
+      canvas.height = naturalHeight;
+      ctx.drawImage(panelEle, 0, 0, canvas.width, canvas.height);
+      break;
+  }
+
+  // 在画布上加水印 canvas.drawImage https://www.runoob.com/try/try.php?filename=tryhtml5_canvas_drawimage
+  ctx.drawImage(
+    waterMarkEle,
+    (40 / 750) * canvas.width,
+    canvas.height - ((40+ wNatureHeight) / 750) * canvas.width,
+    (wNatureWidth / 750) * canvas.width,
+    (wNatureHeight / 750) * canvas.width
+  );
+
+  const url = canvas.toDataURL("image/jpeg"); // 最终图片url
+  const file = dataURItoBlob(url); // 最终图片file
+
+  return {
+    url,
+    file
+  }
+};
+```
+
+## 工具函数
+
+```ts
+
+// 获取照片方向
+const getOrientation = (file) => {
+  return new Promise((resolve, reject) => {
+    const currentVersion = getVersion(); // ios 版本号
+    const support = testVersion(currentVersion, "13.4.1"); // ios版本号大于13.4.1， 无需特殊处理
+
+    if (browserInfo.versions.ios && support) {
+      resolve(1);
+    } else {
+      EXIF.getData(file, () => {
+        resolve(EXIF.getTag(file, "Orientation"));
+      });
+    }
+  });
+};
+
+// 获取base64
+const getBase64 = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(reader.result));
+    reader.readAsDataURL(file);
+  });
+};
+
+// 获取图片原生尺寸
+const getNatureData = (imgUrl) => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.setAttribute("crossOrigin", "Anonymous");
+    img.onload = (e: any) => {
+      resolve({
+        element: img
+        naturalWidth: e.target.naturalWidth,
+        naturalHeight: e.target.naturalHeight,
+      });
+    };
+    img.src = imgUrl;
+  });
+};
+
+// 判断ios版本 preVersion是否大于lastVersion
+export const testVersion = (
+  preVersion: string = "",
+  lastVersion: string = ""
+) => {
+  const sources = preVersion.split(".");
+  const dests = lastVersion.split(".");
+  const maxL = Math.max(sources.length, dests.length);
+  let result = true;
+  for (let i = 0; i < maxL; i++) {
+    let preValue = sources.length > i ? sources[i] : "0";
+    let preNum = isNaN(Number(preValue))
+      ? preValue.charCodeAt(0)
+      : Number(preValue);
+    let lastValue = dests.length > i ? dests[i] : "0";
+    let lastNum = isNaN(Number(lastValue))
+      ? lastValue.charCodeAt(0)
+      : Number(lastValue);
+    if (preNum < lastNum) {
+      result = false;
+      break;
+    } else if (preNum > lastNum) {
+      result = true;
+      break;
+    }
+  }
+  return result;
+};
+
+export const getVersion = () => {
+  const str = navigator.userAgent.toLowerCase();
+  const version = str.match(/cpu iphone os (.*?) like mac os/);
+  let currentVersion = "0.0.0"; // ios 版本号
+  if (version && version[1]) {
+    currentVersion = version[1].replace(/_/g, ".");
+  }
+  return currentVersion;
+};
+
+// 转换为 blob 直接传输 暂时无用
+export const dataURItoBlob = (dataURI: string) => {
+  // convert base64 to raw binary data held in a string
+  // doesn't handle URLEncoded DataURIs
+  var byteString = atob(dataURI.split(",")[1]);
+
+  // separate out the mime component
+  var mimeString = dataURI
+    .split(",")[0]
+    .split(":")[1]
+    .split(";")[0];
+
+  // write the bytes of the string to an ArrayBuffer
+  var ab = new ArrayBuffer(byteString.length);
+  var ia = new Uint8Array(ab);
+  for (var i = 0; i < byteString.length; i++) {
+    ia[i] = byteString.charCodeAt(i);
+  }
+
+  try {
+    // 新版本浏览器
+    return new window.Blob([ia], { type: mimeString });
+  } catch (e) {
+    // TypeError old chrome and FF
+    // Android 中该方式无效
+    window.BlobBuilder =
+      window.BlobBuilder ||
+      window.WebKitBlobBuilder ||
+      window.MozBlobBuilder ||
+      window.MSBlobBuilder;
+
+    if (e.name === "TypeError" && window.BlobBuilder) {
+      var bb = new window.BlobBuilder();
+      bb.append(ab);
+      return bb.getBlob(mimeString);
+    } else {
+      return null;
+    }
+  }
+};
+```
+## demo尝试
+https://codesandbox.io/s/canvasshui-yin-9dqgqn

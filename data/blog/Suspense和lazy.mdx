@@ -1,0 +1,60 @@
+---
+title: Suspense和lazy
+date: '2024-01-13'
+tags:
+  - react
+  - javascript
+---
+
+## 一、ConcurrentMode（略）
+示例：https://codesandbox.io/s/concurrentmode-2br7oc?file=/src/demo/index.js
+
+## 二、react.Suspense和react.lazy
+如果有多个OtherComponent，会等全部加载完成，Spinner才会消失
+```jsx
+// 该组件是动态加载的
+const OtherComponent = React.lazy(() => import('./OtherComponent'));
+
+function MyComponent() {
+  return (
+    // 显示 <Spinner> 组件直至 OtherComponent 加载完成
+    <React.Suspense fallback={<Spinner />}>
+      <div>
+        <OtherComponent />
+      </div>
+    </React.Suspense>
+  );
+}
+```
+## 三、源码
+### 1. Suspense
+Suspense 就是一个类型
+```js
+  Suspense: REACT_SUSPENSE_TYPE,
+```
+### 2. lazy
+```js
+// Thenable相当于是个Promise, 可以用.then(resolve, reject)
+export type Thenable<T, R> = {
+  then(resolve: (T) => mixed, reject: (mixed) => mixed): R,
+};
+
+export type LazyComponent<T> = {
+  $$typeof: Symbol | number,
+  // _ctor 是一个 返回promise的函数
+  _ctor: () => Thenable<{default: T}, mixed>,
+  _status: 0 | 1 | 2,
+  _result: any,
+};
+
+export function lazy<T, R>(ctor: () => Thenable<T, R>): LazyComponent<T> {
+  return {
+    $$typeof: REACT_LAZY_TYPE,
+    _ctor: ctor,
+    // React uses these fields to store the result.
+    _status: -1, // promise状态  -1是pending
+    _result: null, // 最终resolve的组件
+  };
+}
+```
+

@@ -1,0 +1,496 @@
+---
+title: 手写羊了个羊——der了个der
+date: '2024-01-13'
+tags:
+  - js
+  - 前端
+  - react
+---
+
+## 一、前言
+
+随着羊了个羊爆火，最近也看到别人写了狗了个狗、猪了个猪之类的，自己也手痒了，因为懒得找图标素材，就从 antd icon 中随便 copy 了一些，名字就叫 der 了个 der 吧，纯属娱乐
+
+[github地址](https://github.com/lihaixing/derlegeder)
+
+[点击体验](https://lihaixing.github.io/derlegeder/)
+
+## 二、实现
+
+我们用类`Panel`维护放方块的面板，用类`ResolveBar`来维护下方消除条
+
+
+### 1. `Panel`和`ResolveBar`定义
+
+#### 1.1 首先在`Panel`中定义可配置的数据
+
+```ts
+class Panel extends EventEmitter {
+  private panelWidth; // 面板宽度
+  private panelHeight; // 面板高度
+  private cubeTypeCount; // 方块种类数，
+  private cubeCount; // 方块数量
+  private slotCount; // 下方消除条可放多少个方块
+  private cubeWidth; // 方块宽度，长宽一样
+  private destroyCount; // 同种类方块多少个可消除 默认就是3
+
+  constructor(config: IConfig) {
+    super();
+    this.panelWidth = config.panelWidth;
+    this.panelHeight = config.panelHeight;
+    this.cubeTypeCount = config.cubeTypeCount;
+    this.cubeCount = config.cubeCount;
+    this.slotCount = config.slotCount;
+    this.cubeWidth = config.cubeWidth;
+    this.destroyCount = config.destroyCount || 3;
+  }
+}
+```
+
+#### 1.2 添加自定义数据
+
+```ts
+class Panel extends EventEmitter {
+  ...
+  // 自定义数据
+  private cubesInfo: ICubeInfo[] = []; // 小方块详细信息
+  private coordinateRange: ICoordinateRange; // 坐标范围
+  private slot: ResolveBar;
+  constructor(config: IConfig) {
+    ...
+    // 坐标范围
+    this.coordinateRange = {
+      x: [this.cubeWidth / 2, this.panelWidth - this.cubeWidth / 2],
+      y: [this.cubeWidth / 2, this.panelHeight - this.cubeWidth / 2],
+    }
+
+    this.slot = new ResolveBar({
+      cubeCount: this.slotCount,
+      destroyCount: this.destroyCount
+    })
+  }
+}
+```
+详细解读：
+- `cubesInfo`：维护所有在面板中的方块
+  ```js
+  interface ICubeInfo {
+    coordinate: [number, number]; // 方块坐标 x，y
+    cubeTypeKey: number; // 方块种类，我们就用 数字标识 0,1,2,3,4,...
+    zIndex: number; // 放置的层级
+    id: string; // 唯一标识，会用随机数标识
+    coveredCubes: ICubeInfo[]; // 被哪些方块覆盖
+  }
+  ```
+- `coordinateRange`: 方块可放置的坐标范围
+  <br/>
+  > 注意：x 和 y 各有一个区间
+    因为方块是有宽高的，而坐标只是一个点，因为放置的范围并不是直接面板的快高，而是要减掉自身宽高的一半
+
+  ```ts
+  export interface ICoordinateRange {
+    x: [number, number];
+    y: [number, number];
+  }
+
+  this.coordinateRange = {
+    x: [this.cubeWidth / 2, this.panelWidth - this.cubeWidth / 2],
+    y: [this.cubeWidth / 2, this.panelHeight - this.cubeWidth / 2],
+  };
+  ```
+- `slot`就是消除条
+  我们直接 new 一个 ResolveBar， 消除条维护的数据比较简单
+  ```ts
+  class ResolveBar {
+    private cubeCount;
+    private destroyCount;
+    private keyCount: Map<number, number>; // 统计不同方块种类的数量
+    private slotArr: ICubeInfo[]; // 放置的方块列表，是有顺序的
+    constructor(config: IResolveBarConfig) {
+      this.cubeCount = config.cubeCount;
+      this.destroyCount = config.destroyCount;
+      this.keyCount = new Map();
+      this.slotArr = [];
+    }
+  ```
+
+
+
+### 2. `drawPanel`: 在panel中放置方块
+
+我们希望方块放置的坐标、以及放置方块的种类都是是随机的，这需要一些计算
+
+#### 2.1 方块种类随机计算方法
+首先方块的种类的随机的，这里考虑了不同类型方块的数量要尽量大致相等。
+
+因此首先我们平均分配，先计算出每种类型放多少个方块（当然并不能完全平均，需要把余数先排除），并放到数组`averageCubeTypeKeyArr`中
+
+```ts
+// 可以放多少组, 默认每组3个方块, 就是destroyCount
+const groupCount = Math.floor(this.cubeCount / this.destroyCount);
+// 每种类型放多少组
+const groupCountOfPerType = Math.floor(groupCount / this.cubeTypeCount);
+
+const averageCubeTypeKeyArr = new Array(
+  groupCountOfPerType * this.cubeTypeCount * this.destroyCount
+);
+
+for (let i = 0; i < this.cubeTypeCount; i++) {
+  const start = i * this.destroyCount * groupCountOfPerType;
+  const end = start + this.destroyCount * groupCountOfPerType;
+  averageCubeTypeKeyArr.fill(i, start, end);
+}
+```
+
+接下来，就是要处理余数，余数不能平均分配，我们就只能采取抽签方式
+
+```ts
+// 还剩多少组可以放, 剩下的随机放
+const leftGroupCount = groupCount % this.cubeTypeCount;
+
+const cubeTypeArr = Array.from(
+  new Array(this.cubeTypeCount),
+  (item, index) => index
+);
+
+const leftCubeTypeKeyArr = new Array(leftGroupCount * this.destroyCount);
+const choujiang = new Choujiang(cubeTypeArr);
+for (let i = 0; i < leftGroupCount; i++) {
+  let key = choujiang.choujiang();
+  const start = i * this.destroyCount;
+  const end = start + this.destroyCount;
+  leftCubeTypeKeyArr.fill(key, start, end);
+}
+```
+
+这里用到了一个不重复抽奖逻辑，直接看代码
+
+```ts
+class Choujiang {
+  private cacheList: Array<any> = [];
+  todos: Array<any> = [];
+  deleteIndex: number | undefined;
+
+  constructor(list: Array<any>) {
+    this.cacheList = list;
+  }
+
+  choujiang(): any {
+    if (this.deleteIndex) {
+      this.todos.splice(this.deleteIndex, 1);
+    }
+    const count = this.todos.length - 1;
+    const index = Math.round(count * Math.random());
+    this.deleteIndex = index;
+
+    console.log(index + "中奖了");
+
+    return this.todos[index];
+  }
+}
+```
+
+然后，我们把平均分配的的方块类型和通过抽奖方式分配的方块类型拼到一块，并且通过随机排序的方式把数组顺序打乱，就得到了最终的方块种类数组
+
+```ts
+const finalCubeTypeKeyArr = [
+  ...averageCubeTypeKeyArr,
+  ...leftCubeTypeKeyArr,
+].sort(() => {
+  return Math.random() < 0.5 ? 1 : -1;
+});
+```
+
+整体的方块类型数组计算如下
+
+```ts
+private calcCubeTypeKey() {
+  // 可以放多少组, 默认每组3个方块
+  const groupCount = Math.floor(this.cubeCount / this.destroyCount);
+  // 每种类型放多少组
+  const groupCountOfPerType = Math.floor(groupCount / this.cubeTypeCount);
+
+  const averageCubeTypeKeyArr = new Array(groupCountOfPerType * this.cubeTypeCount * this.destroyCount);
+
+  for (let i = 0; i < this.cubeTypeCount; i++) {
+    const start = i * this.destroyCount * groupCountOfPerType;
+    const end = start + this.destroyCount * groupCountOfPerType;
+    averageCubeTypeKeyArr.fill(i, start, end);
+  }
+
+  // 还剩多少组可以放, 剩下的随机放
+  const leftGroupCount = groupCount % this.cubeTypeCount;
+
+  const cubeTypeArr = Array.from(new Array(this.cubeTypeCount), (item, index) => index);
+
+  const leftCubeTypeKeyArr = new Array(leftGroupCount * this.destroyCount);
+  const choujiang = new Choujiang(cubeTypeArr);
+  for (let i = 0; i < leftGroupCount; i++) {
+    let key = choujiang.choujiang();
+    const start = i * this.destroyCount;
+    const end = start + this.destroyCount;
+    leftCubeTypeKeyArr.fill(key, start, end);
+  }
+
+  // 拼接并打乱
+  const finalCubeTypeKeyArr = [...averageCubeTypeKeyArr, ...leftCubeTypeKeyArr].sort(() => {
+    return Math.random() < 0.5 ? 1 : -1
+  })
+
+  return finalCubeTypeKeyArr;
+}
+```
+
+#### 2.2 坐标的随机算法
+坐标的随机比较简单
+
+```ts
+const randomX =
+  this.coordinateRange.x[0] +
+  Math.random() * (this.coordinateRange.x[1] - this.coordinateRange.x[0]);
+const randomY =
+  this.coordinateRange.y[0] +
+  Math.random() * (this.coordinateRange.y[1] - this.coordinateRange.y[0]);
+```
+#### 2.3 完整的`drawPanel`方块方法如下
+```ts
+public drawPanel() {
+  const cubeTypeKeyArr = this.calcCubeTypeKey();
+
+  for (let i = 0; i < this.cubeCount; i++) {
+    const randomX = this.coordinateRange.x[0] + Math.random() * (this.coordinateRange.x[1] - this.coordinateRange.x[0]);
+    const randomY = this.coordinateRange.y[0] + Math.random() * (this.coordinateRange.y[1] - this.coordinateRange.y[0]);
+    const cubeTypeKey = cubeTypeKeyArr[i];
+    const id = Math.random().toString();
+
+    const currentCube: ICubeInfo = {
+      id,
+      zIndex: i,
+      coordinate: [randomX, randomY],
+      cubeTypeKey,
+      coveredCubes: []
+    };
+
+    // 处理覆盖逻辑
+    this.calcCoveredCubes(currentCube);
+
+    this.cubesInfo.push(currentCube);
+  }
+
+  this.emit('updatePanelCubes', this.cubesInfo);
+}
+```
+>需要注意到`calcCoveredCubes`这个方法，这是处理方块直接覆盖的，因为每放置一个方块，我们要考虑是否覆盖了已经在面板中的某些方块
+
+>逻辑就是如果覆盖了某个方块，我们就把当前新添加的方块push到被覆盖方块的`coveredCubes`中
+
+```ts
+private calcCoveredCubes(currentCube: ICubeInfo) {
+  const { coordinate } = currentCube;
+  this.cubesInfo.forEach(item => {
+    if (this.isCover(coordinate, item.coordinate)) {
+      item.coveredCubes.push(currentCube)
+    }
+  })
+}
+
+private isCover(coordinate2: [number, number], coordinate1: [number, number]) {
+  const dx = Math.abs(coordinate2[0] - coordinate1[0]) - this.cubeWidth;
+  const dy = Math.abs(coordinate2[1] - coordinate1[1]) - this.cubeWidth;
+
+  return dx < 0 && dy < 0
+}
+```
+
+### 3 `removeCube` 方块消除
+
+接下来就是消除方块了，当我们点击面板某个没有被覆盖的方块时，需要进行消除逻辑，这里有三件事情要做
+1. 要将当前方块从面板中消除掉
+2. 遍历剩余的方块，如果它的coveredCubes存在此方块，也要删掉
+3. 在消除条中添加这个方块
+
+#### 3.1 面板中方块消除逻辑如下：
+```ts
+public removeCube(id: string) {
+  const currentCubeIndex = this.cubesInfo.findIndex(item => item.id === id);
+  if (currentCubeIndex === -1) {
+    throw new Error('找不到当前id')
+  }
+
+  const currentCube = this.cubesInfo[currentCubeIndex]
+  if (currentCube.coveredCubes.length > 0) {
+    throw new Error('当前cube被覆盖，不能移除')
+  }
+  // 从面板中删除方块
+  this.cubesInfo.splice(currentCubeIndex, 1);
+
+  // 更新剩余方块的coveredCubes
+  this.cubesInfo.forEach(item => {
+    const findCubeIndex = item.coveredCubes.findIndex(item => item.id === id);
+    if (findCubeIndex > -1) {
+      item.coveredCubes.splice(findCubeIndex, 1)
+    }
+  })
+
+  this.emit('updatePanelCubes', this.cubesInfo);
+  // 消除条中添加方块
+  const slotArr = this.slot.add(currentCube);
+
+  this.emit('updateSlotCubes', slotArr)
+}
+```
+
+#### 3.2 消除条方块添加
+
+在上一步中末尾我们也看到，方块被从面板删除后，同时也要将此方块添加到消除条中
+
+消除条中添加方块逻辑如下,
+1. 查看要添加的方块种类已经存在多少个
+2. 如果已经存在，并且再加一个就需要消除了，那就直接把消除条中此种类的方块全删掉，完成消除逻辑
+3. 如果已经存在，但是还没到消除的个数，那就找到此种类方块最后出现的位置，把当前方块插进去
+4. 如果此种类方块并不存在，我们把当前方块直接push进去就好了
+
+具体实现逻辑如下
+```ts
+public add(cube: ICubeInfo) {
+  if (this.slotArr.length >= this.cubeCount) {
+    return;
+  }
+
+  const findKeyCount = this.keyCount.get(cube.cubeTypeKey) || 0;
+
+  if (findKeyCount >= this.destroyCount - 1) {
+    const index = this.slotArr.findIndex(item => item.cubeTypeKey === cube.cubeTypeKey);
+
+    this.slotArr.splice(index, findKeyCount);
+
+    this.keyCount.set(cube.cubeTypeKey, 0);
+  } else {
+    const lastIndex = this.slotArr.map(item => item.cubeTypeKey).lastIndexOf(cube.cubeTypeKey);
+    if (lastIndex > -1) {
+      this.slotArr.splice(lastIndex + 1, 0, cube);
+    } else {
+      this.slotArr.push(cube);
+    }
+
+    this.keyCount.set(cube.cubeTypeKey, findKeyCount + 1);
+  }
+
+  return this.slotArr
+}
+```
+
+## 三、集成
+```tsx
+const bodyWidth = document.body.clientWidth;
+const defaultConfig = {
+  cubeTypeCount: 15,
+  cubeCount: 60,
+  slotCount: 7,
+  destroyCount: 3,
+  cubeWidth: Math.floor(bodyWidth / (bodyWidth > 750 ? 20 : 8))
+}
+
+function App() {
+  const app = useRef<any>(null);
+  const pig = useRef<Pig | null>(null);
+  const stepCount = useRef(0);
+  const [cubesInfo, setCubesInfo] = useState<ICubeInfo[]>([]);
+  const [slotCubesInfo, setSlotCubesInfo] = useState<ICubeInfo[]>([]);
+
+  const onMountApp = (ele: HTMLDivElement) => {
+    app.current = ele;
+  }
+
+  const newPig = () => {
+    setCubesInfo([])
+    setSlotCubesInfo([])
+    stepCount.current = 0;
+    if (app.current) {
+      pig.current = new Pig({
+        panelWidth: app.current.clientWidth,
+        panelHeight: app.current.clientHeight,
+        cubeWidth: defaultConfig.cubeWidth,
+        cubeTypeCount: defaultConfig.cubeTypeCount,
+        cubeCount: defaultConfig.cubeCount,
+        slotCount: defaultConfig.slotCount,
+        destroyCount: defaultConfig.destroyCount
+      });
+
+      pig.current.on('updatePanelCubes', (cubes: ICubeInfo[]) => {
+        setCubesInfo([...cubes]);
+      });
+
+      pig.current.on('updateSlotCubes', (cubes: ICubeInfo[]) => {
+        setSlotCubesInfo([...cubes]);
+      });
+
+      pig.current.drawPanel()
+    }
+  }
+
+  useEffect(() => {
+    newPig();
+    return () => {
+      pig.current?.removeAllListener()
+    }
+  }, [])
+
+  const onClickCube = (item: ICubeInfo, event: any) => {
+    if (item.coveredCubes.length > 0) {
+      return;
+    }
+    stepCount.current++;
+    pig.current?.removeCube(item.id);
+  }
+
+  useEffect(() => {
+    if (slotCubesInfo.length === defaultConfig.slotCount) {
+      alert('挑战失败，点击确认重新开始');
+      newPig()
+    }
+
+    if (stepCount.current === defaultConfig.cubeCount && cubesInfo.length === 0 && slotCubesInfo.length === 0) {
+      alert('恭喜通关，点击确认再重新玩')
+      newPig()
+    }
+
+  }, [cubesInfo, slotCubesInfo])
+
+  return (
+    <div className="container">
+      <div className="App" ref={onMountApp} style={{ height: `calc(100% - ${defaultConfig.cubeWidth + 20}px)` }}>
+        {
+          cubesInfo.map((item: ICubeInfo) => {
+            return <div key={item.id} onClick={(event) => onClickCube(item, event)} className={cn("item", item.coveredCubes.length > 0 && 'cover')} style={{ width: defaultConfig.cubeWidth, height: defaultConfig.cubeWidth, left: item.coordinate[0] - defaultConfig.cubeWidth / 2, top: item.coordinate[1] - defaultConfig.cubeWidth / 2, zIndex: item.zIndex }}>
+              {
+                renderIconList(item.cubeTypeKey, item.coveredCubes.length > 0, { fontSize: defaultConfig.cubeWidth })
+              }
+            </div>
+          })
+        }
+      </div>
+      <div className="footer">
+        <div className="bar" style={{ width: defaultConfig.slotCount * defaultConfig.cubeWidth, height: defaultConfig.cubeWidth }}>
+          {
+            slotCubesInfo.map((item: ICubeInfo) => {
+              return <div key={item.id} className={cn("slot-item")} style={{ width: defaultConfig.cubeWidth, height: defaultConfig.cubeWidth }}>
+                {
+                  renderIconList(item.cubeTypeKey, false, { fontSize: defaultConfig.cubeWidth })
+                }
+              </div>
+            })
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const renderIconList = (i: number, isCover: boolean, style: any) => {
+  const Icon = IconList[i];
+  const colorProps = isCover ? { twoToneColor: "rgba(0,0,0)" } : {};
+  return <Icon style={style} {...colorProps} />
+}
+```
+

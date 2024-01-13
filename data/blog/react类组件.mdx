@@ -1,0 +1,101 @@
+---
+title: react类组件
+date: '2024-01-13'
+tags:
+  - react
+  - javascript
+  - jsx
+---
+
+## 一、源码路径
+
+`react/packages/react/src/React.js 包含了各种React的api`, 从中知道 `PureComponent Component` 来自`react/packages/react/src/ReactBaseClasses.js`
+
+## 二、Component
+
+```js
+import ReactNoopUpdateQueue from "./ReactNoopUpdateQueue";
+
+const emptyObject = {};
+
+function Component(props, context, updater) {
+  this.props = props;
+  this.context = context;
+  // If a component has string refs, we will assign a different object later.
+  this.refs = emptyObject;
+  // We initialize the default updater but the real one gets injected by the
+  // renderer.
+  this.updater = updater || ReactNoopUpdateQueue;
+}
+// 没什么用
+Component.prototype.isReactComponent = {};
+
+Component.prototype.setState = function(partialState, callback) {
+  this.updater.enqueueSetState(this, partialState, callback, "setState");
+};
+
+/**
+ * @param {?function} callback Called after update is complete.
+ * @final
+ * @protected
+ */
+Component.prototype.forceUpdate = function(callback) {
+  this.updater.enqueueForceUpdate(this, callback, "forceUpdate");
+};
+```
+
+## 三、PureComponent
+
+```js
+/**
+ * Convenience component with default shallow equality check for sCU.
+ */
+function PureComponent(props, context, updater) {
+  this.props = props;
+  this.context = context;
+  // If a component has string refs, we will assign a different object later.
+  this.refs = emptyObject;
+  this.updater = updater || ReactNoopUpdateQueue;
+}
+
+function ComponentDummy() {}
+ComponentDummy.prototype = Component.prototype;
+
+const pureComponentPrototype = (PureComponent.prototype = new ComponentDummy());
+
+pureComponentPrototype.constructor = PureComponent;
+// Avoid an extra prototype jump for these methods.
+Object.assign(pureComponentPrototype, Component.prototype);
+pureComponentPrototype.isPureReactComponent = true;
+
+export { Component, PureComponent };
+```
+
+这里好奇`ComponentDummy`的作用，其实是实现了一个继承, 想让 `PureComponent.prototype`的原型是`Component.prototype`, 我们看看`Object.create`的实现：
+```js
+Object.CREATE = function(obj, properties) {
+  function F() {}
+  F.prototype = obj;
+  let o = new F();
+  // 注意Object.create可以传入第二个参数，是一个对象，但格式必须是Object.defineProperties()方法一样
+  if (typeof properties === "object") {
+    Object.defineProperties(o, properties);
+  }
+  return o;
+};
+```
+所以
+```js
+function ComponentDummy() {}
+ComponentDummy.prototype = Component.prototype;
+
+const pureComponentPrototype = (PureComponent.prototype = new ComponentDummy());
+
+// 相当于
+const pureComponentPrototype = (PureComponent.prototype = Object.create(Component.prototype));
+```
+
+更多查看：
+1. [面向对象、原型链、继承](https://segmentfault.com/a/1190000023531337)
+2. [new运算符、bind、Object.create、instanceof实现原理探讨](https://segmentfault.com/a/1190000016476368)
+

@@ -1,0 +1,285 @@
+---
+title: react children
+tags: ['react', 'javascript', 'jsx']
+date: '2024-01-13'
+---
+
+## 一、react children map 使用
+
+```js
+function ChildrenDemo(props) {
+  console.log(props.children);
+  console.log(React.Children.map(props.children, (c) => [c, [c, c]]));
+  return props.children;
+}
+
+export default () => (
+  <ChildrenDemo>
+    <span>1</span>
+    <span>2</span>
+  </ChildrenDemo>
+);
+```
+
+react.Children.map 能够扁平化处理, 打印结果：
+
+```js
+(2) [{…}, {…}]
+0: {$$typeof: Symbol(react.element), type: 'span', key: null, ref: null, props: {…}, …}
+1: {$$typeof: Symbol(react.element), type: 'span', key: null, ref: null, props: {…}, …}
+length: 2
+
+(6) [{…}, {…}, {…}, {…}, {…}, {…}]
+0: {$$typeof: Symbol(react.element), type: 'span', key: '.0/.0', ref: null, props: {…}, …}
+1: {$$typeof: Symbol(react.element), type: 'span', key: '.0/.1:0', ref: null, props: {…}, …}
+2: {$$typeof: Symbol(react.element), type: 'span', key: '.0/.1:1', ref: null, props: {…}, …}
+3: {$$typeof: Symbol(react.element), type: 'span', key: '.1/.0', ref: null, props: {…}, …}
+4: {$$typeof: Symbol(react.element), type: 'span', key: '.1/.1:0', ref: null, props: {…}, …}
+5: {$$typeof: Symbol(react.element), type: 'span', key: '.1/.1:1', ref: null, props: {…}, …}
+length: 6
+```
+
+## 二、react.Children.map 源码
+
+`react/packages/react/src/ReactChildren.js`
+![react.Children.map调用结构图](/asset/image/react-children-map.png)
+
+```js
+function mapChildren(children, func, context) {
+  if (children == null) {
+    return children;
+  }
+  const result = [];
+  // 开始
+  mapIntoWithKeyPrefixInternal(children, result, null, func, context);
+  return result;
+}
+
+function mapIntoWithKeyPrefixInternal(children, array, prefix, func, context) {
+
+  let escapedPrefix = "";
+  if (prefix != null) {
+    escapedPrefix = escapeUserProvidedKey(prefix) + "/";
+  }
+
+  // 这个要看有多少个嵌套数组，每嵌套一层，就加一个
+  const traverseContext = getPooledTraverseContext(
+    array,
+    escapedPrefix,
+    func,
+    context
+  );
+  const count = traverseAllChildren(children, mapSingleChildIntoContext, traverseContext);
+
+  releaseTraverseContext(traverseContext);
+}
+
+function traverseAllChildren(children, callback, traverseContext) {
+  if (children == null) {
+    return 0;
+  }
+
+  return traverseAllChildrenImpl(children, '', callback, traverseContext);
+}
+
+function traverseAllChildrenImpl(
+  children,
+  nameSoFar,
+  callback,
+  traverseContext,
+) {
+  const type = typeof children;
+
+  if (type === 'undefined' || type === 'boolean') {
+    // All of the above are perceived as null.
+    children = null;
+  }
+
+  let invokeCallback = false;
+
+  if (children === null) {
+    invokeCallback = true;
+  } else {
+    switch (type) {
+      case 'string':
+      case 'number':
+        invokeCallback = true;
+        break;
+      case 'object':
+        switch (children.$$typeof) {
+          case REACT_ELEMENT_TYPE:
+          case REACT_PORTAL_TYPE:
+            invokeCallback = true;
+        }
+    }
+  }
+
+  // 如果是单个元素或文本
+  if (invokeCallback) {
+    // 就是mapSingleChildIntoContext，回调函数处理
+    callback(
+      traverseContext,
+      children,
+      // If it's the only child, treat the name as if it was wrapped in an array
+      // so that it's consistent if the number of children grows.
+      nameSoFar === '' ? SEPARATOR + getComponentKey(children, 0) : nameSoFar,
+    );
+    // 用来计算元素数量
+    return 1;
+  }
+
+  let child;
+  let nextName;
+  let subtreeCount = 0; // Count of children found in the current subtree.
+  const nextNamePrefix =
+    nameSoFar === '' ? SEPARATOR : nameSoFar + SUBSEPARATOR;
+
+  // 如果是多个元素
+  if (Array.isArray(children)) {
+    for (let i = 0; i < children.length; i++) {
+      child = children[i];
+      nextName = nextNamePrefix + getComponentKey(child, i);
+      subtreeCount += traverseAllChildrenImpl(
+        child,
+        nextName,
+        callback,
+        traverseContext,
+      );
+    }
+  } else {
+    const iteratorFn = getIteratorFn(children);
+    if (typeof iteratorFn === 'function') {
+      const iterator = iteratorFn.call(children);
+      let step;
+      let ii = 0;
+      while (!(step = iterator.next()).done) {
+        child = step.value;
+        nextName = nextNamePrefix + getComponentKey(child, ii++);
+        subtreeCount += traverseAllChildrenImpl(
+          child,
+          nextName,
+          callback,
+          traverseContext,
+        );
+      }
+    } else if (type === 'object') {
+      let addendum = '';
+
+      const childrenString = '' + children;
+    }
+  }
+
+  return subtreeCount;
+}
+
+function mapSingleChildIntoContext(bookKeeping, child, childKey) {
+  const {result, keyPrefix, func, context} = bookKeeping;
+
+  let mappedChild = func.call(context, child, bookKeeping.count++);
+  // 会调函数处理完可能还是数组，就得再处理mapIntoWithKeyPrefixInternal
+  if (Array.isArray(mappedChild)) {
+    // 这里就不调用函数callback了，用c => c
+    mapIntoWithKeyPrefixInternal(mappedChild, result, childKey, c => c);
+  } else if (mappedChild != null) {
+    if (isValidElement(mappedChild)) {
+      mappedChild = cloneAndReplaceKey(
+        mappedChild,
+        // Keep both the (mapped) and old keys if they differ, just as
+        // traverseAllChildren used to do for objects as children
+        keyPrefix +
+          (mappedChild.key && (!child || child.key !== mappedChild.key)
+            ? escapeUserProvidedKey(mappedChild.key) + '/'
+            : '') +
+          childKey,
+      );
+    }
+    result.push(mappedChild);
+  }
+}
+```
+下面是上下文池的一个生成、释放，和业务逻辑无关
+```js
+// 这里主要上下文生成池，最多10个
+const POOL_SIZE = 10;
+const traverseContextPool = [];
+function getPooledTraverseContext(
+  mapResult,
+  keyPrefix,
+  mapFunction,
+  mapContext,
+) {
+  if (traverseContextPool.length) {
+    const traverseContext = traverseContextPool.pop();
+    traverseContext.result = mapResult;
+    traverseContext.keyPrefix = keyPrefix;
+    traverseContext.func = mapFunction;
+    traverseContext.context = mapContext;
+    traverseContext.count = 0;
+    return traverseContext;
+  } else {
+    return {
+      result: mapResult,
+      keyPrefix: keyPrefix,
+      func: mapFunction,
+      context: mapContext,
+      count: 0,
+    };
+  }
+}
+
+// 这里是上下文池释放方法
+function releaseTraverseContext(traverseContext) {
+  traverseContext.result = null;
+  traverseContext.keyPrefix = null;
+  traverseContext.func = null;
+  traverseContext.context = null;
+  traverseContext.count = 0;
+  if (traverseContextPool.length < POOL_SIZE) {
+    traverseContextPool.push(traverseContext);
+  }
+}
+```
+
+## 关于key
+```js
+/**
+ * Generate a key string that identifies a component within a set.
+ *
+ * @param {*} component A component that could contain a manual key.
+ * @param {number} index Index that is used if a manual key is not provided.
+ * @return {string}
+ */
+function getComponentKey(component, index) {
+  // Do some typechecking here since we call this blindly. We want to ensure
+  // that we don't block potential future ES APIs.
+  if (
+    typeof component === 'object' &&
+    component !== null &&
+    component.key != null
+  ) {
+    // Explicit key
+    return escape(component.key);
+  }
+  // Implicit key determined by the index in the set
+  return index.toString(36);
+}
+
+/**
+ * Escape and wrap key so it is safe to use as a reactid
+ *
+ * @param {string} key to be escaped.
+ * @return {string} the escaped key.
+ */
+function escape(key) {
+  const escapeRegex = /[=:]/g;
+  const escaperLookup = {
+    '=': '=0',
+    ':': '=2',
+  };
+  const escapedString = ('' + key).replace(escapeRegex, function(match) {
+    return escaperLookup[match];
+  });
+
+  return '$' + escapedString;
+}
+```

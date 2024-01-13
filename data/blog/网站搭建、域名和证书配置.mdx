@@ -1,0 +1,180 @@
+---
+title: 网站搭建、域名和证书配置
+date: '2024-01-13'
+tags:
+  - nginx
+  - https
+  - 网站搭建
+  - 域名
+---
+
+## 一、购买云服务器
+
+云服务器在哪里买也是一样
+
+## 二、服务器安装各种工具
+
+有了服务器，就需要在服务器上装我们需要的工具，主要有以下这些
+
+- nginx：可以作为静态资源服务，同时能配置域名、代理等，也可以是 php，这个随意
+- git：部署更新一般都会用到 git
+- yarn：习惯了 yarn，npm 也可以
+- node：npm 包
+
+## 三、部署网站
+
+有了服务器就可以部署我们的网站了
+
+也就是将网站部署到服务器上的某个目录，具体什么方式自己决定，手动 copy，或者是利用 pm2，或者 docker，随意
+
+我们将静态资源部署到`/usr/share/nginx/html`目录下，这是 nginx 静态资源服务
+
+我们可以直接执行`vim /etc/nginx/nginx.conf` 打开 nginx 配置文件，看一下配置
+
+```nginx
+server {
+      listen       80 default_server;
+      listen       [::]:80 default_server;
+      # 静态资源目录
+      root         /usr/share/nginx/html;
+
+      # Load configuration files for the default server block.
+      include /etc/nginx/default.d/*.conf;
+
+      error_page 404 /404.html;
+          location = /40x.html {
+      }
+
+      error_page 500 502 503 504 /50x.html;
+          location = /50x.html {
+      }
+  }
+```
+
+静态资源部署后，就可以通过 ip 访问网站了
+
+> 注意：如果我们部署的不是静态资源，而是一个 node 服务，那我们是不需要 nginx/php 这些服务的，直接在服务器上将 node 服务跑起来就可以了，然后通过 ip+端口就能访问到服务
+
+另外，可能默认服务器端口只开放了 80 端口，如果希望能通过其它端口访问服务，需要在服务器运营商那里配置安全组的进出站规则，例如百度云
+
+![百度云安全组](/asset/image/anquanzu.png "百度云安全组规则")
+
+## 四、申请域名和域名备案
+
+目前我们只能通过 ip 访问网站，因此我们需要申请域名，域名在哪里买都可以，腾讯云、百度云、阿里云、华为云等等
+
+域名购买成功后，还需要给域名备案，通过工信部审核
+一般是买的哪家云服务器，就在哪里备案, 备案直到审核通过，需要几天时间，审核通过域名就可以使用了
+
+## 五、在 nginx 服务中配置域名
+
+域名备案审核通过后，在服务其中直接执行`vim /etc/nginx/nginx.conf` 打开 nginx 配置文件配置
+
+```nginx
+server {
+      listen       80 default_server;
+      listen       [::]:80 default_server;
+      # 配置服务域名
+      server_name  hstarx.cn;
+
+      root         /usr/share/nginx/html;
+
+      # Load configuration files for the default server block.
+      include /etc/nginx/default.d/*.conf;
+
+      error_page 404 /404.html;
+          location = /40x.html {
+      }
+
+      error_page 500 502 503 504 /50x.html;
+          location = /50x.html {
+      }
+  }
+```
+
+到此，我们可以通过域名访问网站了
+
+## 六、配置 SSL 证书
+
+目前域名只能通过 http 访问，毫无安全性可言，我们随便在哪个服务商申请一个就好了，一般都是免费的，我是在腾讯云申请的
+
+SSL 证书安装教程：[SSL 证书安装](https://cloud.tencent.com/document/product/400/4143)、[Nginx 证书安装教程](https://cloud.tencent.com/document/product/400/35244)
+
+Nginx 证书安装具体流程大概如下：
+
+1. 下载证书，并将证书上传到服务器
+
+   比如我自己将证书放到`/root/httpsCrt`目录下
+   ```bash
+   [root@lsgKTGIOfR httpsCrt]# pwd
+   /root/httpsCrt
+   [root@lsgKTGIOfR httpsCrt]# ls
+   Apache  IIS  Nginx  Tomcat  www.hstarx.cn.csr  www.hstarx.cn.key  www.hstarx.cn.pem
+   ```
+2. 在服务其中直接执行`vim /etc/nginx/nginx.conf` 打开 nginx 配置文件配置证书路径等
+```nginx
+#这是原来的
+server {
+    listen       80 default_server;
+    listen       [::]:80 default_server;
+    server_name  hstarx.cn;
+
+    root         /var/www/blog_hexo/;
+
+    # Load configuration files for the default server block.
+    include /etc/nginx/default.d/*.conf;
+
+    error_page 404 /404.html;
+        location = /40x.html {
+    }
+
+    error_page 500 502 503 504 /50x.html;
+        location = /50x.html {
+    }
+}
+
+# 这是新加的
+server {
+    listen       443 ssl http2 default_server;
+    listen       [::]:443 ssl http2 default_server;
+    server_name  hstarx.cn;
+    root         /var/www/blog_hexo/;
+
+    ssl_certificate "/root/httpsCrt/Nginx/1_www.hstarx.cn_bundle.crt";
+    ssl_certificate_key "/root/httpsCrt/Nginx/2_www.hstarx.cn.key";
+    ssl_session_cache shared:SSL:1m;
+    ssl_session_timeout  10m;
+    ssl_ciphers PROFILE=SYSTEM;
+    ssl_prefer_server_ciphers on;
+
+    # Load configuration files for the default server block.
+    include /etc/nginx/default.d/*.conf;
+
+    location / {
+    }
+
+    error_page 404 /404.html;
+        location = /40x.html {
+    }
+
+    error_page 500 502 503 504 /50x.html;
+        location = /50x.html {
+    }
+}
+```
+
+到此，我们就可以通过https访问我们的域名了
+
+## 七、关于域名解析的其它问题
+1. 无法通过www访问
+
+   需要增加一条DNS解析记录即可
+   ![DNS解析](/asset/image/DNSPOD.png)
+
+2. 增加子域名，和1类似
+
+
+3. 你还可以通过此方式解析不同的ip（没试过）
+4. 如何强制将http访问转成https访问：[nginx http强制转https](https://hstarx.cn/2022/07/28/nginx-http-qiang-zhi-zhuan-https/)
+
+

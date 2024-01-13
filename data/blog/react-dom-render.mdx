@@ -1,0 +1,278 @@
+---
+title: react dom render
+tags:
+  - react
+  - javascript
+  - jsx
+---
+
+## 一、react 创建更新的方式
+
+- `ReactDom.render || hydrate`
+- `setState`
+- `forceUpdate`
+
+## 二、步骤
+
+- 创建 ReactRoot
+- 创建 FiberRoot 和 RootFiber
+- 创建更新（更新进入调度）
+
+## 三、render
+
+### 1. ReactDOM 有哪些方法
+
+```js
+const ReactDOM: Object = {
+  createPortal,
+  findDOMNode,
+  hydrate,
+  render,
+  unstable_renderSubtreeIntoContainer,
+  unmountComponentAtNode,
+  unstable_createPortal,
+  unstable_batchedUpdates: DOMRenderer.batchedUpdates,
+  unstable_interactiveUpdates: DOMRenderer.interactiveUpdates,
+  flushSync: DOMRenderer.flushSync,
+  unstable_flushControlled: DOMRenderer.flushControlled,
+  __SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED,
+};
+```
+
+### 2. react dom render
+
+- hydrate 和 render 只有第 4 个参数 forceHydrate 有区别，hydrate 用于服务端渲染;
+- forceHydrate 表示是否要调和原来的 dom 元素，主要取决于这个元素是否有子元素
+
+render
+
+```js
+-> legacyRenderSubtreeIntoContainer // 渲染开始
+  -> legacyCreateRootFromDOMContainer // 创建 ReactRoot
+```
+
+```js
+function hydrate(
+  element: React$Node,
+  container: DOMContainer,
+  callback: ?Function
+) {
+  // TODO: throw or warn if we couldn't hydrate?
+  return legacyRenderSubtreeIntoContainer(
+    null,
+    element,
+    container,
+    true,
+    callback
+  );
+}
+function render(
+  element: React$Element<any>,
+  container: DOMContainer,
+  callback: ?Function // 渲染结束回调
+) {
+  return legacyRenderSubtreeIntoContainer(
+    null, //
+    element,
+    container,
+    false, //
+    callback
+  );
+}
+```
+
+接下来是主要逻辑
+
+```js
+function legacyRenderSubtreeIntoContainer(
+  parentComponent: ?React$Component<any, any>,
+  children: ReactNodeList,
+  container: DOMContainer,
+  forceHydrate: boolean, // 是否调和原来的dom
+  callback: ?Function
+) {
+  // TODO: Without `any` type, Flow says "Property cannot be accessed on any
+  // member of intersection type." Whyyyyyy.
+  let root: Root = (container._reactRootContainer: any);
+  if (!root) {
+    // 创建ReactRoot Initial mount 第一次挂载
+    root = container._reactRootContainer = legacyCreateRootFromDOMContainer(
+      container,
+      forceHydrate
+    );
+    if (typeof callback === "function") {
+      const originalCallback = callback;
+      callback = function() {
+        const instance = DOMRenderer.getPublicRootInstance(root._internalRoot);
+        originalCallback.call(instance);
+      };
+    }
+    // Initial mount should not be batched.
+    DOMRenderer.unbatchedUpdates(() => {
+      if (parentComponent != null) {
+        root.legacy_renderSubtreeIntoContainer(
+          parentComponent,
+          children,
+          callback
+        );
+      } else {
+        root.render(children, callback);
+      }
+    });
+  } else {
+    if (typeof callback === "function") {
+      const originalCallback = callback;
+      callback = function() {
+        const instance = DOMRenderer.getPublicRootInstance(root._internalRoot);
+        originalCallback.call(instance);
+      };
+    }
+    // Update
+    if (parentComponent != null) {
+      root.legacy_renderSubtreeIntoContainer(
+        parentComponent,
+        children,
+        callback
+      );
+    } else {
+      root.render(children, callback);
+    }
+  }
+  return DOMRenderer.getPublicRootInstance(root._internalRoot);
+}
+
+function legacyCreateRootFromDOMContainer(
+  container: DOMContainer,
+  forceHydrate: boolean
+): Root {
+  // 判断真正是否需要调和合并新老节点，shouldHydrateDueToLegacyHeuristic查看是否是空元素
+  const shouldHydrate =
+    forceHydrate || shouldHydrateDueToLegacyHeuristic(container);
+  // 首次清理全部container中的元素
+  if (!shouldHydrate) {
+    let rootSibling;
+    while ((rootSibling = container.lastChild)) {
+      container.removeChild(rootSibling);
+    }
+  }
+
+  // Legacy roots are not async by default.
+  const isConcurrent = false;
+  return new ReactRoot(container, isConcurrent, shouldHydrate);
+}
+```
+
+下面都是判断是否需要真正调和
+
+```js
+export const ELEMENT_NODE = 1;
+export const TEXT_NODE = 3;
+export const COMMENT_NODE = 8;
+export const DOCUMENT_NODE = 9;
+export const DOCUMENT_FRAGMENT_NODE = 11;
+
+function shouldHydrateDueToLegacyHeuristic(container) {
+  const rootElement = getReactRootElementInContainer(container);
+  return !!(
+    (
+      rootElement &&
+      rootElement.nodeType === ELEMENT_NODE &&
+      rootElement.hasAttribute(ROOT_ATTRIBUTE_NAME)
+    ) // 'data-reactroot' 服务端渲染都会带这个
+  );
+}
+
+function getReactRootElementInContainer(container: any) {
+  if (!container) {
+    return null;
+  }
+
+  if (container.nodeType === DOCUMENT_NODE) {
+    return container.documentElement;
+  } else {
+    return container.firstChild;
+  }
+}
+```
+
+ReactRoot
+
+```js
+function ReactRoot(
+  container: Container,
+  isConcurrent: boolean, // 是否并发
+  hydrate: boolean
+) {
+  const root = DOMRenderer.createContainer(container, isConcurrent, hydrate);
+  this._internalRoot = root;
+}
+
+ReactRoot.prototype.render = function(
+  children: ReactNodeList,
+  callback: ?() => mixed
+): Work {
+  const root = this._internalRoot;
+  const work = new ReactWork();
+  callback = callback === undefined ? null : callback;
+  if (callback !== null) {
+    work.then(callback);
+  }
+  DOMRenderer.updateContainer(children, root, null, work._onCommit);
+  return work;
+};
+
+ReactRoot.prototype.unmount = function(callback: ?() => mixed): Work {
+  const root = this._internalRoot;
+  const work = new ReactWork();
+  callback = callback === undefined ? null : callback;
+  if (callback !== null) {
+    work.then(callback);
+  }
+  DOMRenderer.updateContainer(null, root, null, work._onCommit);
+  return work;
+};
+
+ReactRoot.prototype.legacy_renderSubtreeIntoContainer = function(
+  parentComponent: ?React$Component<any, any>,
+  children: ReactNodeList,
+  callback: ?() => mixed
+): Work {
+  const root = this._internalRoot;
+  const work = new ReactWork();
+  callback = callback === undefined ? null : callback;
+  if (callback !== null) {
+    work.then(callback);
+  }
+  DOMRenderer.updateContainer(children, root, parentComponent, work._onCommit);
+  return work;
+};
+
+ReactRoot.prototype.createBatch = function(): Batch {
+  const batch = new ReactBatch(this);
+  const expirationTime = batch._expirationTime;
+
+  const internalRoot = this._internalRoot;
+  const firstBatch = internalRoot.firstBatch;
+  if (firstBatch === null) {
+    internalRoot.firstBatch = batch;
+    batch._next = null;
+  } else {
+    // Insert sorted by expiration time then insertion order
+    let insertAfter = null;
+    let insertBefore = firstBatch;
+    while (
+      insertBefore !== null &&
+      insertBefore._expirationTime <= expirationTime
+    ) {
+      insertAfter = insertBefore;
+      insertBefore = insertBefore._next;
+    }
+    batch._next = insertBefore;
+    if (insertAfter !== null) {
+      insertAfter._next = batch;
+    }
+  }
+
+  return batch;
+};
+```

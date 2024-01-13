@@ -1,0 +1,135 @@
+---
+title: dataUrl和base64
+date: '2024-01-13'
+tags: [js 前端 二进制 base64]
+---
+## 一、 Data URLs
+Data URLs 由四个部分组成：前缀 (data:)、指示数据类型的 MIME 类型、如果非文本则为可选的base64标记、数据本身：
+```js
+data:[<mediatype>][;base64],<data>
+```
+mediatype 是个 MIME 类型的字符串，例如 "image/jpeg" 表示 JPEG 图像文件。如果被省略，则默认值为 text/plain;charset=US-ASCII
+
+下面是一些示例：
+
+`data:,Hello%2C%20World!`
+简单的 text/plain 类型数据
+
+`data:text/plain;base64,SGVsbG8sIFdvcmxkIQ%3D%3D`
+上一条示例的 base64 编码版本
+
+`data:text/html,%3Ch1%3EHello%2C%20World!%3C%2Fh1%3E`
+一个 HTML 文档源代码 `<h1>Hello, World</h1>`
+
+`data:text/html,<script>alert('hi');</script>`
+一个会执行 JavaScript alert 的 HTML 文档。注意 script 标签必须封闭。
+
+
+## 二、base64
+所谓Base64，就是说选出64个字符----小写字母a-z、大写字母A-Z、数字0-9、符号"+"、"/"（再加上作为垫字的"="，实际上是65个字符）----作为一个基本字符集。
+
+然后，其他所有符号都转换成这个字符集中的字符。
+
+### 1. 二进制转base64步骤
+具体来说，转换方式可以分为四步。
+
+- 第一步，将每三个字节作为一组，一共是24个二进制位。
+- 第二步，将这24个二进制位分为四组，每个组有6个二进制位。
+- 第三步，在每组前面加两个00，扩展成32个二进制位，即四个字节。
+- 第四步，根据下表，得到扩展后的每个字节的对应符号，这就是Base64的编码值。
+
+![base64](/asset/image/base64.jpg)
+
+### 2. 举例说明
+#### 2.1 举一个具体的实例，演示英语单词Man如何转成Base64编码
+![base64](/asset/image/base64jisuan.jpg)
+
+
+
+- 第一步，"M"、"a"、"n"的ASCII值分别是77、97、110，对应的二进制值是`01001101、01100001、01101110`，将它们连成一个24位的二进制字符串`010011010110000101101110`。
+
+- 第二步，将这个24位的二进制字符串分成4组，每组6个二进制位：`010011、010110、000101、101110`。
+
+- 第三步，在每组前面加两个00，扩展成32个二进制位，即四个字节：`00010011、00010110、00000101、00101110`。它们的十进制值分别是`19、22、5、46`。
+
+- 第四步，根据上表，得到每个值对应Base64编码，即`T、W、F、u`。
+
+因此，Man的Base64编码就是`TWFu`。
+
+#### 2.2 再举一个中文的例子，汉字"严"如何转化成Base64编码？
+
+这里需要注意，汉字本身可以有多种编码，比如gb2312、utf-8、gbk等等，每一种编码的Base64对应值都不一样。下面的例子以utf-8为例。
+
+首先，"严"的utf-8编码为`E4B8A5`，写成二进制就是三字节的`11100100 10111000 10100101`。将这个24位的二进制字符串，按照第3节中的规则，转换成四组一共32位的二进制值`00111001 00001011 00100010 00100101`，相应的十进制数为`57、11、34、37`，它们对应的Base64值就为`5、L、i、l`。
+
+所以，汉字"严"（utf-8编码）的Base64值就是`5Lil`。
+### 3. 如果字节数不足三，则这样处理
+
+#### 3.1 二个字节的情况：
+将这二个字节的一共16个二进制位，按照上面的规则，转成三组，最后一组除了前面加两个0以外，后面也要加两个0。这样得到一个三位的Base64编码，再在末尾补上一个"="号。
+
+比如，"Ma"这个字符串是两个字节，可以转化成三组`00010011、00010110、00010000`以后，对应Base64值分别为T、W、E，再补上一个"="号，因此"Ma"的Base64编码就是TWE=。
+
+#### 3.2 一个字节的情况：
+将这一个字节的8个二进制位，按照上面的规则转成二组，最后一组除了前面加二个0以外，后面再加4个0。这样得到一个二位的Base64编码，再在末尾补上两个"="号。
+
+比如，"M"这个字母是一个字节，可以转化为二组`00010011、00010000`，对应的Base64值分别为T、Q，再补上二个"="号，因此"M"的Base64编码就是`TQ==`。
+
+### 4. file转base64
+```js
+const blobToBase64 = (file) => {
+  const chars =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  return file.arrayBuffer().then((buffer) => {
+    const unit8 = new Uint8Array(buffer);
+
+    let str = "";
+    for (let i = 0; i < unit8.length; i += 3) {
+      const x0 = unit8[i];
+      const x1 = unit8[i + 1];
+      const x2 = unit8[i + 2];
+
+      const y0 = x0 >> 2;
+      str += chars[y0];
+
+
+
+      let y1 = (x0 << 4) & 0x30;
+      if (x1 !== undefined) {
+        y1 = y1 | (x1 >> 4);
+      }
+      str += chars[y1];
+
+      if (x1 === undefined) {
+        str += "==";
+        break;
+      }
+
+
+      let y2;
+      if (x2 !== undefined) {
+        y2 = ((x1 << 2) & 0x3c) | (x2 >> 6);
+      } else {
+        y2 = (x1 << 2) & 0x3c;
+      }
+      str += chars[y2];
+
+      if (x2 === undefined) {
+        str += "=";
+        break;
+      }
+
+      const y3 = x2 & 0x3f;
+      str += chars[y3];
+    }
+    console.log(str);
+    return str;
+  });
+};
+```
+
+
+## 参考链接
+[MDN data-urls](https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Basics_of_HTTP/Data_URLs)
+[MDN base64](https://developer.mozilla.org/zh-CN/docs/Glossary/Base64)
+[阮一峰 base64](https://www.ruanyifeng.com/blog/2008/06/base64.html)

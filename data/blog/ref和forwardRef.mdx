@@ -1,0 +1,211 @@
+---
+title: react ref和forwardRef
+date: '2024-01-13'
+tags:
+  - react
+  - javascript
+  - jsx
+---
+
+## 一、ref 三种用法
+
+```js
+export default class RefDemo extends React.Component {
+  constructor() {
+    super();
+    this.objRef = React.createRef();
+    // objRef = current: null }
+  }
+
+  componentDidMount() {
+    // console.log(`span1: ${this.refs.ref1.textContent}`)
+    // console.log(`span2: ${this.ref2.textContent}`)
+    // console.log(`span3: ${this.ref3.current.textContent}`)
+    setTimeout(() => {
+      // 字符串即将被废弃
+      this.refs.stringRef.textContent = "string ref got";
+      this.methodRef.textContent = "method ref got";
+      this.objRef.current.textContent = "obj ref got";
+    }, 1000);
+  }
+
+  render() {
+    return (
+      <>
+        <p ref="stringRef">span1</p>
+        <p ref={(ele) => (this.methodRef = ele)}>span3</p>
+        <p ref={this.objRef}>span3</p>
+      </>
+    );
+  }
+}
+```
+
+> 前两种没有在 react.js 中，后期再看
+
+## 二、createRef
+
+```js
+export function createRef() {
+  const refObject = {
+    current: null,
+  };
+
+  return refObject;
+}
+```
+
+> 疑问：元素是如何挂载在 current 上的，后期会讲
+
+## 三、ref传递
+类组件是可以轻松传递ref的
+```jsx
+import React from "react";
+class CustomTextInput extends React.Component {
+  constructor(props) {
+    super(props);
+    this.textInput = React.createRef();
+    this.focusTextInput = this.focusTextInput.bind(this);
+  }
+
+  focusTextInput() {
+    this.textInput.current.focus();
+  }
+
+  render() {
+    return (
+      <div>
+        <input value={555} type="text" ref={this.textInput} />
+        <input
+          type="button"
+          value="Focus the text input"
+          onClick={this.focusTextInput}
+        />
+      </div>
+    );
+  }
+}
+
+class AutoFocusTextInput extends React.Component {
+  constructor(props) {
+    super(props);
+    this.textInput = React.createRef();
+  }
+
+  onFocus = () => {
+    // 直接能访问子组件的方法
+    this.textInput.current.focusTextInput();
+  };
+
+  render() {
+    return (
+      <div>
+        <CustomTextInput ref={this.textInput} />
+        <button onClick={this.onFocus}>parent focus</button>
+      </div>
+    );
+  }
+}
+```
+可查看[示例程序](https://codesandbox.io/s/lei-zu-jian-refchuan-di-0cjv1f?file=/src/demo/index.jsx)运行效果
+
+但是对于函数组件，因为没有实例，没有this指向，例如
+```js
+function MyFunctionComponent() {
+  return <input />;
+}
+
+class Parent extends React.Component {
+  constructor(props) {
+    super(props);
+    this.textInput = React.createRef();
+  }
+  render() {
+    // This will *not* work!
+    return (
+      <MyFunctionComponent ref={this.textInput} />
+    );
+  }
+}
+```
+因此需要使用 forwardRef（可与 useImperativeHandle 结合使用），或者可以将该组件转化为 class 组件。
+
+## 四、forwardRef
+
+```jsx
+const TargetComponent = React.forwardRef((props, ref) => (
+  <input type="text" ref={ref} />
+));
+
+export default class Comp extends React.Component {
+  constructor() {
+    super();
+    this.ref = React.createRef();
+  }
+
+  componentDidMount() {
+    this.ref.current.value = "ref get input";
+  }
+
+  render() {
+    return <TargetComponent ref={this.ref} />;
+  }
+}
+```
+
+与useImperativeHandle结合使用, useImperativeHandle 可以让你在使用 ref 时自定义暴露给父组件的实例值。应当与 forwardRef 一起使用
+`useImperativeHandle(ref, createHandle, [deps])`
+
+```js
+function FancyInput(props, ref) {
+  const inputRef = useRef();
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      inputRef.current.focus();
+    }
+  }));
+  return <input ref={inputRef} ... />;
+}
+FancyInput = forwardRef(FancyInput);
+```
+在本例中，渲染 `<FancyInput ref={inputRef} />` 的父组件可以调用 `inputRef.current.focus()`。
+
+## 五、forwardRef 源码
+
+```js
+export default function forwardRef<Props, ElementType: React$ElementType>(
+  render: (props: Props, ref: React$Ref<ElementType>) => React$Node
+) {
+  return {
+    $$typeof: REACT_FORWARD_REF_TYPE,
+    render,
+  };
+}
+```
+
+之前我们知道 jsx 其实就是
+
+```js
+{
+  // This tag allows us to uniquely identify this as a React Element
+  $$typeof: REACT_ELEMENT_TYPE,
+
+  // Built-in properties that belong on the element
+  type: type,
+  key: key,
+  ref: ref,
+  props: props,
+
+  // Record the component responsible for creating this element.
+  _owner: owner,
+}
+```
+
+而对于组件，其中的 type 就是 component 的实例，或者是个函数组件；对于 forwardRef 包裹的组件，type 就是
+
+```jsx
+{
+    $$typeof: REACT_FORWARD_REF_TYPE,
+    render,
+}
+```

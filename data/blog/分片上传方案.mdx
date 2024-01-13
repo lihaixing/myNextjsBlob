@@ -1,0 +1,415 @@
+---
+title: 分片上传方案
+date: '2024-01-13'
+tags: ['js', '分片上传', '断点续传', '前端']
+---
+
+## 一、`index.ts`
+
+```ts
+import Embitter from "../tools/emmitter";
+import Slice from "./sliceUpload";
+
+// 上传状态
+const statusMap = {
+  fail: 0, // 失败
+  success: 1, // 成功
+  inProcessing: 2, // 进行中
+  paused: 3, // 暂停
+  canceled: 4, // 已取消
+  wait: 5 // 未开始
+};
+
+interface IConfig {
+  file: File;
+  parallel: number;
+  partSize: number;
+}
+
+class Client extends Embitter {
+  private file: File;
+  private parallel: number; // 分片并行数量
+  private partSize: number; // 分片大小
+
+  private status: number; // 0 失败 1成功 2进行中 3暂停 4取消 5未开始 6报错
+  private partInfo: IPartInfo;
+  private partsArray: Slice[]; // 维护所有分片
+  private sliceUploadSuccess: Set<number>; // 上传成功的分片partIndex
+  private sliceUploadRunning: Set<number>; // 上传中的分片partIndex
+  private sliceEvent: Embitter;
+
+  constructor(config: IConfig) {
+    super();
+    this.file = config.file;
+    this.parallel = config.parallel || defaultParallel;
+    this.partInfo = {
+      partSize: config.partSize,
+      partNum: Math.ceil(config.file.size / config.partSize),
+    };
+    this.status = statusMap.wait; // 默认未开始
+
+    this.partsArray = [];
+    // 记录成功的分片上传
+    this.sliceUploadSuccess = new Set([]);
+    // 记录上传中的分片
+    this.sliceUploadRunning = new Set([]);
+    // 监听分片上传
+    this.sliceEvent = new Embitter();
+  }
+
+  getConfig() {
+    return {
+      file: this.file,
+      partInfo: this.partInfo,
+      sliceEvent: this.sliceEvent,
+      status: this.status,
+    };
+  }
+
+  private startUploadAllSlice() {
+    this.sliceEvent.on("success", (partIndex: number) => {
+      if (!this.sliceUploadSuccess.has(partIndex)) {
+
+        this.sliceUploadSuccess.add(partIndex);
+
+        this.sliceUploadRunning.delete(partIndex);
+
+        const progress = this.sliceUploadSuccess.size / this.partInfo.partNum;
+
+        this.emmit("progress", progress);
+
+        if (progress >= 1) {
+          this.endSliceUpload();
+        } else {
+          this._resumeUpload();
+        }
+      }
+    });
+
+    this.sliceEvent.on("error", (partIndex: number, err: any) => {
+      this.emmit("error", err);
+
+      this.sliceUploadRunning.delete(partIndex);
+
+      this.status = statusMap.paused; // 上传出现异常就先暂停上传
+
+      this.emmit("pause");
+    });
+
+    const that = this;
+
+    // 创建分片上传实例
+    this.partsArray = Array.from(
+      new Array(this.partInfo.partNum),
+      (x, i) =>
+        new Slice({
+          client: that,
+          partIndex: i + 1,
+        })
+    );
+
+    // 开始分片上传
+    this._resumeUpload();
+  }
+
+
+  /**
+   * 开始上传
+   * @param file
+   * @returns {Promise<void>}
+   */
+  public async startUpload(): Promise<void> {
+    if (this.status !== statusMap.wait) {
+      console.log("startUpload status error", this.status);
+      this.emmit("error", errorMap.hasStarted);
+      return;
+    }
+
+    if (this.status !== statusMap.inProcessing) {
+      this.status = statusMap.inProcessing;
+      this.emmit("start");
+    }
+
+    // 开始上传
+    this.startUploadAllSlice();
+  }
+
+  // 结束分片上传事务
+  private async endSliceUpload() {
+    if (statusMap.canceled === this.status) {
+      return;
+    }
+    const tagList = [];
+    for (const val of this.partsArray) {
+      tagList.push({
+        partIndex: val.partIndex,
+        partTag: val.partTag,
+      });
+    }
+
+    // 结束分片上传事务
+    const res = await action.endMultipartUpload({tagList});
+
+    if (!res.hasOwnProperty("err")) {
+      this.status = statusMap.success;
+      this.emmit("success", {
+        resourceId: res.resourceId,
+        preResourceId: res.preResourceId,
+        url: res.path,
+      });
+    }
+  }
+
+  /**
+   * 暂停上传
+   * @returns {Promise<void>}
+   */
+  public async pauseUpload() {
+    // 只有文件正在上传中，才可以暂停
+    if (this.status !== statusMap.inProcessing) {
+      this.emmit("error", errorMap.noInProcess);
+      return;
+    }
+
+    this.status = statusMap.paused;
+    this.emmit("pause");
+  }
+
+  /**
+   * 分片上传开始
+   * @returns
+   */
+  private _resumeUpload() {
+    const todoParts = this.partsArray.filter(
+      (part) =>
+        !this.sliceUploadSuccess.has(part.partIndex) &&
+        !this.sliceUploadRunning.has(part.partIndex)
+    );
+    let job;
+    while (
+      this.sliceUploadRunning.size < this.parallel &&
+      ![statusMap.paused, statusMap.canceled].includes(this.status) &&
+      (job = todoParts.shift())
+    ) {
+      this.sliceUploadRunning.add(job.partIndex);
+      job.startUpload();
+    }
+  }
+
+  /**
+   * 恢复上传
+   * @returns {Promise<void>}
+   */
+  public async resumeUpload() {
+    if (this.status !== statusMap.paused) {
+      this.emmit("error", errorMap.noCanResume);
+      return;
+    }
+    this.status = statusMap.inProcessing;
+    this.emmit("start");
+    this._resumeUpload();
+  }
+
+  /**
+   * 废除上传
+   * @returns {Promise<void>}
+   */
+  public async abortUpload(): Promise<void> {
+    // 只有文件正在上传中或者上传已经暂停，才可以取消上传
+    if (
+      this.status !== statusMap.inProcessing &&
+      this.status !== statusMap.paused
+    ) {
+      this.emmit("error", errorMap.noCanCancel);
+      return;
+    }
+    const result = await action.abortUpload();
+    // 取消上传成功
+    if (!result.err) {
+      this.status = statusMap.canceled;
+      this.emmit("abort");
+      this.emmit("progress", 0);
+      return;
+    }
+
+    this.emmit("error", result.err);
+  }
+}
+
+export default Client;
+```
+
+### 二、`sliceUpload.ts`
+
+```ts
+import { generateMD5 } from "../tools/utils";
+import action from "../action";
+import Client from "./index";
+class Slice {
+  // 以下是独有属性
+  private sliceFile: Blob;
+  private md5Content: string;
+  private signatureUrl: string;
+  private _status: number; // 0 失败 1成功 2进行中 3暂停 4取消 5未开始 6报错
+  private _partTag: string; // 上传成功会有标签
+  private _partIndex: number;
+  private client: Client; // 上传实例
+
+  constructor(config: ISliceConfig) {
+    this.client = config.client;
+    this._partIndex = config.partIndex;
+
+    this._status = statusMap.wait;
+    this._partTag = "";
+  }
+
+  get partTag() {
+    return this._partTag;
+  }
+
+  get status() {
+    return this._status;
+  }
+
+  get partIndex() {
+    return this._partIndex;
+  }
+
+  /**
+   * 获取分片签名上传url
+   */
+  private async getSignatureUrl() {
+    const { file, sliceEvent } = this.client.getConfig();
+
+    const res = await action.getMultipartUrl(this._partIndex, {
+      headers: {
+        "FileContent-MD5": this.md5Content,
+        "FileContent-Type": file.type || "application/octet-stream",
+      },
+    });
+    if (!res.err) {
+      this.signatureUrl = res.signatureUrl;
+    } else {
+      if (this.getCurrentStatus() === statusMap.canceled) {
+        return;
+      }
+      this._status = statusMap.fail;
+      sliceEvent.emmit("error", this.partIndex, res.err);
+    }
+  }
+
+  private generateSliceFile() {
+    const { partInfo, file } = this.client.getConfig();
+    const start = (this._partIndex - 1) * partInfo.partSize;
+    let end = start + partInfo.partSize;
+    if (this._partIndex === partInfo.partNum) {
+      end = file.size;
+    }
+    this.sliceFile = file.slice(start, end);
+  }
+
+  private isContinueUpload() {
+    const status = this.getCurrentStatus();
+    return ![statusMap.canceled, statusMap.paused].includes(status);
+  }
+
+  private getCurrentStatus() {
+    const { status } = this.client.getConfig();
+    return status;
+  }
+
+  private async uploadSlice() {
+    const { file, sliceEvent } = this.client.getConfig();
+
+    const res = await action.startPartUpload(
+      this.signatureUrl,
+      this.sliceFile,
+      {
+        headers: {
+          "Content-MD5": this.md5Content,
+          "Content-Type": file.type || "application/octet-stream",
+        },
+      }
+    );
+
+    if (!res.err) {
+      this._status = statusMap.success;
+      try {
+        this._partTag = JSON.parse(res.headers.etag);
+      } catch (error) {
+        this._partTag = res.headers.etag;
+      }
+
+      sliceEvent.emmit("success", this._partIndex);
+    } else {
+      if (this.getCurrentStatus() === statusMap.canceled) {
+        return;
+      }
+      this._status = statusMap.fail;
+      sliceEvent.emmit("error", this._partIndex, res.err);
+    }
+  }
+
+  // 上传分片入口
+  async startUpload() {
+    if (this.isContinueUpload() && !this.sliceFile) {
+      this.generateSliceFile();
+    }
+
+    if (this.isContinueUpload() && !this.md5Content && this.sliceFile) {
+      this.md5Content = await generateMD5(this.sliceFile);
+    }
+
+    if (this.isContinueUpload() && !this.signatureUrl && this.md5Content) {
+      await this.getSignatureUrl();
+    }
+
+    if (this.isContinueUpload() && this.signatureUrl) {
+      await this.uploadSlice();
+    }
+
+    return this._status === statusMap.success;
+  }
+}
+
+export default Slice;
+```
+
+## 三、demo 集成
+
+```js
+import xyUpload from "./index.ts";
+
+const client = new xyUpload({
+  file,
+  parallel: 3,
+  partSize: 2000000,
+});
+
+client.on("progress", (res) => {
+  console.log("progress", res);
+});
+
+client.on("success", (res) => {
+  resolve(res);
+});
+
+client.on("error", (res) => {
+  reject(res);
+});
+
+client.on("start", () => {
+  console.log("开始了");
+});
+// 开始上传
+client.startUpload();
+
+// 暂停上传
+client.pauseUpload();
+
+// 继续上传
+client.resumeUpload();
+
+// 废除上传
+client.abortUpload();
+```

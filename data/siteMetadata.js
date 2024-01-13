@@ -2,24 +2,17 @@
 const siteMetadata = {
   title: '漏油的Blog',
   author: '漏油',
-  headerTitle: 'LOUYOU_BLOG',
+  headerTitle: '漏油的Blog',
   description: 'Nothing is impossible',
-  language: 'en-us',
+  language: 'zh-CN',
   theme: 'system', // system, dark or light
   siteUrl: 'https://tailwind-nextjs-starter-blog.vercel.app',
-  siteRepo: 'https://github.com/timlrx/tailwind-nextjs-starter-blog',
-  siteLogo: '/static/images/logo.png',
+  siteRepo: 'https://github.com/lihaixing/myNextjsBlob',
+  siteLogo: '/static/images/avatar.png',
   socialBanner: '/static/images/twitter-card.png',
-  mastodon: 'https://mastodon.social/@mastodonuser',
-  email: 'address@yoursite.com',
-  github: 'https://github.com',
-  twitter: 'https://twitter.com/Twitter',
-  facebook: 'https://facebook.com',
-  youtube: 'https://youtube.com',
-  linkedin: 'https://www.linkedin.com',
-  threads: 'https://www.threads.net',
-  instagram: 'https://www.instagram.com',
-  locale: 'en-US',
+  email: 'lihaixingabc@126.com',
+  github: 'https://github.com/lihaixing',
+  locale: 'zh-CN',
   analytics: {
     // If you want to use an analytics provider you have to add it to the
     // content security policy in the `next.config.js` file.
@@ -78,6 +71,7 @@ const siteMetadata = {
     provider: 'kbar', // kbar or algolia
     kbarConfig: {
       searchDocumentsPath: 'search.json', // path to load documents to search
+      placeholder: '请输入搜索内容',
     },
     // provider: 'algolia',
     // algoliaConfig: {
@@ -86,6 +80,7 @@ const siteMetadata = {
     //   // Public API key: it is safe to commit it
     //   apiKey: '599cec31baffa4868cae4e79f180729b',
     //   indexName: 'docsearch',
+    //   placeholder: '请输入搜索内容',
     // },
   },
 }

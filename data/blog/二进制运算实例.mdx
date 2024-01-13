@@ -1,0 +1,595 @@
+---
+title: 二进制运算实例
+date: '2024-01-13'
+tags: ['js', '前端', '二进制']
+---
+
+### 实际使用
+
+位运算只可运用于整数，对于 float 和 double 不行。
+
+- WebGL 游戏数据处理
+- WebSockets、AJAX、Fetch、WebRTC 服务通信
+- WebUSB、WebAudio 硬件通信
+- Crypto 加密算法
+
+### 1. 一些基本用法
+
+<table>
+  <tbody>
+    <tr>
+      <th>位运算</th>
+      <th>功能</th>
+      <th>示例</th>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>x &gt;&gt; 1</td>
+      <td>去掉最后一位</td>
+      <td>101101-&gt;10110</td>
+    </tr>
+    <tr>
+      <td>x &lt;&lt; 1</td>
+      <td>在最后加一个0</td>
+      <td>101101-&gt;1011010</td>
+      </tr>
+    <tr>
+      <td>x &lt;&lt; 1 | 1</td>
+      <td>在最后加一个1</td>
+      <td>101101-&gt;1011011</td>
+    </tr>
+    <tr>
+      <td>x | 1</td>
+      <td>把最后一位变成1</td>
+      <td>101100-&gt;101101</td>
+    </tr>
+    <tr>
+      <td>x &amp; -2</td>
+      <td>把最后一位变成0</td>
+      <td>101101-&gt;101100</td>
+    </tr>
+    <tr>
+      <td>x ^ 1</td>
+      <td>最后一位取反</td>
+      <td>101101-&gt;101100</td>
+    </tr>
+    <tr>
+      <td>x | (1 &lt;&lt; (k-1))</td>
+      <td>把右数第k位变成1</td>
+      <td>101001-&gt;101101,k=3</td>
+    </tr>
+    <tr>
+      <td>x &amp; ~ (1 &lt;&lt; (k-1))</td>
+      <td>把右数第k位变成0</td>
+      <td>101101-&gt;101001,k=3</td>
+    </tr>
+    <tr>
+      <td>x ^(1 &lt;&lt;(k-1))</td>
+      <td>右数第k位取反</td>
+      <td>101001-&gt;101101,k=3</td>
+    </tr>
+    <tr>
+      <td>x &amp; 7</td>
+      <td>取末三位</td>
+      <td>1101101-&gt;101</td>
+    </tr>
+    <tr>
+      <td>x &amp; (1 &lt;&lt; k-1)</td>
+      <td>取末k位</td>
+      <td>1101101-&gt;1101,k=5</td>
+    </tr>
+    <tr>
+      <td>x &gt;&gt; (k-1) &amp; 1</td>
+      <td>取右数第k位</td>
+      <td>1101101-&gt;1,k=4</td>
+    </tr>
+    <tr>
+      <td>x | ((1 &lt;&lt; k)-1)</td>
+      <td>把末k位变成1</td>
+      <td>101001-&gt;101111,k=4</td>
+    </tr>
+    <tr>
+      <td>x ^ (1 &lt;&lt; k-1)</td>
+      <td>末k位取反</td>
+      <td>101001-&gt;100110,k=4</td>
+    </tr>
+    <tr>
+      <td>x &amp; (x+1)</td>
+      <td>把右边连续的1变成0</td>
+      <td>100101111-&gt;100100000</td>
+    </tr>
+    <tr>
+      <td>x | (x+1)</td>
+      <td>把右起第一个0变成1</td>
+      <td>100101111-&gt;100111111</td>
+    </tr>
+    <tr>
+      <td>x | (x-1)</td>
+      <td>把右边连续的0变成1</td>
+      <td>11011000-&gt;11011111</td>
+    </tr>
+    <tr>
+      <td>(x ^ (x+1)) &gt;&gt; 1</td>
+      <td>取右边连续的1</td>
+      <td>100101111-&gt;1111</td>
+    </tr>
+    <tr>
+      <td>x &amp; -x</td>
+      <td>去掉右起第一个1的左边</td>
+      <td>100101000-&gt;1000</td>
+    </tr>
+    <tr>
+      <td>x&amp;0x7F</td>
+      <td>取末7位</td>
+      <td>100101000-&gt;101000</td>
+    </tr>
+    <tr>
+      <td>x&amp; ~0x7F</td>
+      <td>是否小于127</td>
+      <td>001111111 &amp; ~0x7F-&gt;0</td>
+    </tr>
+    <tr>
+      <td>x &amp; 1</td>
+      <td>判断奇偶</td>
+      <td>00000111&amp;1-&gt;1</td>
+    </tr>
+  </tbody>
+</table>
+
+```js
+// 取负数
+console.log(~4 + 1); // -4
+// 舍弃小数
+console.log(~~1.5); // 1
+// 取模（余数）
+// i % 4 === i & (4 - 1)
+console.log(1 % 4, 1 & 3); // 1 1
+```
+
+### 2. 交换两数
+
+```js
+int swap(int a, int b)
+{
+    if (a != b)
+    {
+        a ^= b;
+        b ^= a;
+        a ^= b;
+    }
+}
+```
+
+### 3. 求绝对值
+
+```js
+int abs(int a)
+{
+    int i = a >> 31;
+    return ((a ^ i) - i);
+}
+```
+
+### 4. 二分查找 32 位整数前导 0 个数
+
+```ini
+int nlz(unsigned x)
+{
+   int n;
+
+   if (x == 0) return(32);
+   n = 1;
+   if ((x >> 16) == 0) {n = n +16; x = x <<16;}
+   if ((x >> 24) == 0) {n = n + 8; x = x << 8;}
+   if ((x >> 28) == 0) {n = n + 4; x = x << 4;}
+   if ((x >> 30) == 0) {n = n + 2; x = x << 2;}
+   n = n - (x >> 31);
+   return n;
+}
+```
+
+### 5. 二进制逆序
+
+```ini
+int reverse_order(int n){
+
+  n = ((n & 0xAAAAAAAA) >> 1) | ((n & 0x55555555) << 1);
+  n = ((n & 0xCCCCCCCC) >> 2) | ((n & 0x33333333) << 2);
+  n = ((n & 0xF0F0F0F0) >> 4) | ((n & 0x0F0F0F0F) << 4);
+  n = ((n & 0xFF00FF00) >> 8) | ((n & 0x00FF00FF) << 8);
+  n = ((n & 0xFFFF0000) >> 16) | ((n & 0x0000FFFF) << 16);
+
+  return n;
+}
+```
+
+### 6. 二进制中 1 的个数
+
+```ini
+ unsigned int BitCount_e(unsigned int value) {
+    unsigned int count = 0;
+    // 解释下下面这句话代码，这句话求得两两相加的结果，例如 11 01 00 10
+    // 11 01 00 10 = 01 01 00 00 + 10 00 00 10，即由奇数位和偶数位相加而成
+    // 记 value = 11 01 00 10，high_v = 01 01 00 00， low_v = 10 00 00 10
+    // 则 value = high_v + low_v，high_v 右移一位得 high_v_1，
+    // 即 high_v_1 = high_v >> 1 = high_v / 2
+    // 此时 value 可以表示为 value = high_v_1 + high_v_1 + low_v，
+    // 可见 我们需要 high_v + low_v 的和即等于 value - high_v_1
+    // 写简单点就是 value = value & 0x55555555 + (value >> 1) & 0x55555555;
+    value = value - ((value >> 1) & 0x55555555);
+
+    // 之后的就好理解了
+    value = (value & 0x33333333) + ((value >> 2) & 0x33333333);
+    value = (value & 0x0f0f0f0f) + ((value >> 4) & 0x0f0f0f0f);
+    value = (value & 0x00ff00ff) + ((value >> 4) & 0x00ff00ff);
+    value = (value & 0x0000ffff) + ((value >> 8) & 0x0000ffff);
+    return value;
+
+    // 另一种写法，原理一样，原因在最后一种解法中有提到
+    //value = (value & 0x55555555) + (value >> 1) & 0x55555555;
+    //value = (value & 0x33333333) + ((value >> 2) & 0x33333333);
+    //value = (value & 0x0f0f0f0f) + ((value >> 4) & 0x0f0f0f0f);
+    //value = value + (value >> 8);
+    //value = value + (value >> 16);
+    //return (value & 0x0000003f);
+}
+```
+
+### 7. 字符串和字节互转
+
+```ts
+function stringToByte(str: string) {
+  const bytes = [];
+  let c: number;
+  const len = str.length;
+  for (let i = 0; i < len; i++) {
+    c = str.charCodeAt(i);
+    if (c >= 0x010000 && c <= 0x10ffff) {
+      bytes.push(((c >> 18) & 0x07) | 0xf0);
+      bytes.push(((c >> 12) & 0x3f) | 0x80);
+      bytes.push(((c >> 6) & 0x3f) | 0x80);
+      bytes.push((c & 0x3f) | 0x80);
+    } else if (c >= 0x000800 && c <= 0x00ffff) {
+      bytes.push(((c >> 12) & 0x0f) | 0xe0);
+      bytes.push(((c >> 6) & 0x3f) | 0x80);
+      bytes.push((c & 0x3f) | 0x80);
+    } else if (c >= 0x000080 && c <= 0x0007ff) {
+      bytes.push(((c >> 6) & 0x1f) | 0xc0);
+      bytes.push((c & 0x3f) | 0x80);
+    } else {
+      bytes.push(c & 0xff);
+    }
+  }
+  return bytes;
+}
+
+function byteToString(arr: any) {
+  if (typeof arr === "string") {
+    return arr;
+  }
+  let str = "";
+  const _arr = arr;
+  for (let i = 0; i < _arr.length; i++) {
+    const one = _arr[i].toString(2),
+      v = one.match(/^1+?(?=0)/);
+    if (v && one.length == 8) {
+      const bytesLength = v[0].length;
+      let store = _arr[i].toString(2).slice(7 - bytesLength);
+      for (let st = 1; st < bytesLength; st++) {
+        store += _arr[st + i].toString(2).slice(2);
+      }
+      str += String.fromCharCode(parseInt(store, 2));
+      i += bytesLength - 1;
+    } else {
+      str += String.fromCharCode(_arr[i]);
+    }
+  }
+  return str;
+}
+```
+
+charCodeAt 获取到值的范围 0 ～ 65536 ，按 8 bits 切成 4 个字节。
+
+### 8. 使用左移运算符 \<< 迅速得出 2 的次方
+
+```js
+1 << 2; // 4, 即 2的2次方
+1 << 10; // 1024, 即 2的10次方
+
+// 但是要注意使用场景, 非1的数字，会改变首位的正负
+a = 2e9; // 2000000000
+a << 1; // -294967296
+```
+
+### 9. 使用 ^ 切换变量 0 或 1
+
+```js
+// --- before ---
+// if 判断
+if (toggle) {
+  toggle = 0;
+} else {
+  toggle = 1;
+}
+// 三目运算符
+togle = toggle ? 0 : 1;
+
+// --- after ---
+toggle ^= 1;
+```
+
+### 10. 使用`~`、`>>`、`<<`、`>>>`、`|`来取整
+
+相当于使用了 Math.floor()
+
+```js
+console.log(~~11.71); // 11
+console.log(11.71 >> 0); // 11
+console.log(11.71 << 0); // 11
+console.log(11.71 | 0); // 11
+console.log(11.71 >>> 0); // 11
+```
+
+### 11. 使用^判断符号是否相同
+
+```js
+(a ^ b) >= 0; //  true 相同; false 不相同  复制代码
+```
+
+### 11. 使用 A + 0.5 | 0 来替代 Math.round()
+
+如果是负数，用 `A - 0.5 | 0`
+
+### 12. 使用&, >>, |来完成 rgb 值和 16 进制颜色值之间的转换
+
+```js
+/**
+ * 16进制颜色值转RGB
+ * @param  {String} hex 16进制颜色字符串
+ * @return {String}     RGB颜色字符串
+ */
+function hexToRGB(hex) {
+  var hexx = hex.replace("#", "0x");
+  var r = hexx >> 16;
+  var g = (hexx >> 8) & 0xff;
+  var b = hexx & 0xff;
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+/**
+ * RGB颜色转16进制颜色
+ * @param  {String} rgb RGB进制颜色字符串
+ * @return {String}     16进制颜色字符串
+ */
+function RGBToHex(rgb) {
+  var rgbArr = rgb.split(/[^\d]+/);
+  var color = (rgbArr[1] << 16) | (rgbArr[2] << 8) | rgbArr[3];
+  return "#" + color.toString(16);
+}
+// -------------------------------------------------
+hexToRGB("#ffffff"); // 'rgb(255,255,255)'
+RGBToHex("rgb(255,255,255)"); // '#ffffff'
+```
+
+### 13. base64 转 blob
+
+```js
+// 转换为 blob 直接传输 暂时无用
+export const dataURItoBlob = (dataURI: string) => {
+  // convert base64 to raw binary data held in a string
+  // doesn't handle URLEncoded DataURIs
+  var byteString = atob(dataURI.split(",")[1]);
+
+  // separate out the mime component
+  var mimeString = dataURI
+    .split(",")[0]
+    .split(":")[1]
+    .split(";")[0];
+
+  // write the bytes of the string to an ArrayBuffer
+  var ab = new ArrayBuffer(byteString.length);
+  var ia = new Uint8Array(ab);
+  for (var i = 0; i < byteString.length; i++) {
+    ia[i] = byteString.charCodeAt(i);
+  }
+  return new window.Blob([ia], { type: mimeString });
+};
+
+export const base64ToFile = (dataurl: string, filename: string) => {
+  var arr = dataurl.split(","),
+    // @ts-ignore
+    mime = arr[0].match(/:(.*?);/)[1],
+    bstr = atob(arr[1]),
+    n = bstr.length,
+    u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new File([u8arr], filename, { type: mime });
+};
+```
+
+### 14. Base64 库
+
+```js
+export const Base64 = {
+  // private property
+  _keyStr: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=",
+
+  /**
+   * 使用Base64编码字符串
+   *
+   * @param { string } input 待编码内容
+   * @returns { string }
+   */
+  encode: (input) => {
+    let output = "";
+    let chr1, chr2, chr3, enc1, enc2, enc3, enc4;
+    let i = 0;
+
+    input = Base64._utf8_encode(input);
+
+    while (i < input.length) {
+      chr1 = input.charCodeAt(i++);
+      chr2 = input.charCodeAt(i++);
+      chr3 = input.charCodeAt(i++);
+
+      enc1 = chr1 >> 2;
+      enc2 = ((chr1 & 3) << 4) | (chr2 >> 4);
+      enc3 = ((chr2 & 15) << 2) | (chr3 >> 6);
+      enc4 = chr3 & 63;
+
+      if (isNaN(chr2)) {
+        enc3 = enc4 = 64;
+      } else if (isNaN(chr3)) {
+        enc4 = 64;
+      }
+
+      output =
+        output +
+        Base64._keyStr.charAt(enc1) +
+        Base64._keyStr.charAt(enc2) +
+        Base64._keyStr.charAt(enc3) +
+        Base64._keyStr.charAt(enc4);
+    }
+    return output;
+  },
+
+  /**
+   * 解码Base64字符串
+   *
+   * @param { string } input 待解码Base64字符串
+   * @returns
+   */
+  decode: (input) => {
+    let output = "";
+    let chr1, chr2, chr3, enc1, enc2, enc3, enc4;
+    let i = 0;
+
+    input = input.replace(/[^A-Za-z0-9\+\/\=]/g, "");
+
+    while (i < input.length) {
+      enc1 = Base64._keyStr.indexOf(input.charAt(i++));
+      enc2 = Base64._keyStr.indexOf(input.charAt(i++));
+      enc3 = Base64._keyStr.indexOf(input.charAt(i++));
+      enc4 = Base64._keyStr.indexOf(input.charAt(i++));
+
+      chr1 = (enc1 << 2) | (enc2 >> 4);
+      chr2 = ((enc2 & 15) << 4) | (enc3 >> 2);
+      chr3 = ((enc3 & 3) << 6) | enc4;
+
+      output = output + String.fromCharCode(chr1);
+
+      if (enc3 != 64) {
+        output = output + String.fromCharCode(chr2);
+      }
+      if (enc4 != 64) {
+        output = output + String.fromCharCode(chr3);
+      }
+    }
+
+    output = Base64._utf8_decode(output);
+
+    return output;
+  },
+
+  /**
+   * private method for UTF-8 encoding
+   *
+   * @private
+   * @param { string } string
+   * @returns
+   */
+  _utf8_encode: (string) => {
+    string = string.replace(/\r\n/g, "\n");
+    let utfText = "";
+
+    for (let n = 0; n < string.length; n++) {
+      const c = string.charCodeAt(n);
+
+      if (c < 128) {
+        utfText += String.fromCharCode(c);
+      } else if (c > 127 && c < 2048) {
+        utfText += String.fromCharCode((c >> 6) | 192);
+        utfText += String.fromCharCode((c & 63) | 128);
+      } else {
+        utfText += String.fromCharCode((c >> 12) | 224);
+        utfText += String.fromCharCode(((c >> 6) & 63) | 128);
+        utfText += String.fromCharCode((c & 63) | 128);
+      }
+    }
+    return utfText;
+  },
+
+  /**
+   * private method for UTF-8 decoding
+   *
+   * @private
+   * @param {string} utfText
+   * @returns
+   */
+  _utf8_decode: (utfText) => {
+    let string = "";
+    let i = 0;
+    let c,
+      c2,
+      c3 = 0;
+
+    while (i < utfText.length) {
+      c = utfText.charCodeAt(i);
+
+      if (c < 128) {
+        string += String.fromCharCode(c);
+        i++;
+      } else if (c > 191 && c < 224) {
+        c2 = utfText.charCodeAt(i + 1);
+        string += String.fromCharCode(((c & 31) << 6) | (c2 & 63));
+        i += 2;
+      } else {
+        c2 = utfText.charCodeAt(i + 1);
+        c3 = utfText.charCodeAt(i + 2);
+        string += String.fromCharCode(
+          ((c & 15) << 12) | ((c2 & 63) << 6) | (c3 & 63)
+        );
+        i += 3;
+      }
+    }
+    return string;
+  },
+};
+```
+
+### 15. crypto-js 库
+
+https://github.com/brix/crypto-js/blob/develop/README.md
+
+### 其它
+
+**（1）判断奇偶**
+
+只要根据最未位是 0 还是 1 来决定，为 0 就是偶数，为 1 就是奇数。因此可以用`if ((i & 1) === 0)`代替`if (i % 2 === 0)`来判断 a 是不是偶数。
+
+**（2）清零**
+
+如果想将一个单元清零，即使其全部二进制位为 0，只要与一个各位都为零的数值相与，结果为零。
+
+**（3）是否 2 的 n 次幂**
+
+```js
+// (x & x - 1) === 0
+console.log((2 & (2 - 1)) === 0); // true
+```
+
+**（4）求平均值防止溢出**
+
+```js
+// 求平均值，防溢出
+function avg(x, y) {
+  return (x & y) + ((x ^ y) >> 1);
+}
+```
+
+## 参考
+
+[javascript 位运算技巧](https://zhuanlan.zhihu.com/p/339012370)

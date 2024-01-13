@@ -1,0 +1,80 @@
+---
+title: window滚动条样式的问题
+date: '2024-01-13'
+tags:
+  - CSS
+  - 滚动条
+  - IE
+---
+
+### chrome内核（非IE内核）
+
+``` css
+div{
+  /*滚动条滑块按钮的颜色*/
+  scrollbar-face-color: #134187;
+  /*滚动条整体颜色*/
+  scrollbar-highlight-color: #134187;
+  /*滚动条轨道颜色*/
+  scrollbar-track-color: #011433;
+}
+/*滚动条整体部分,必须要设置*/
+::-webkit-scrollbar{
+  background-color: #011433;
+  width:10px;
+  height:10px;
+}
+/*滚动条的轨道*/
+::-webkit-scrollbar-track{
+  background-color: #011433;
+  border-radius: 10px;
+}
+/*滚动条的滑块按钮*/
+::-webkit-scrollbar-thumb{
+  border-radius: 10px;
+  background-color: #134087;
+}
+```
+### ie内核
+```css
+//Ie下滚动条样式
+HTML {
+  scrollbar-base-color: #134087;
+  //scrollbar-base-color: #134087;
+  scrollbar-3dlight-color:#134087;
+  scrollbar-highlight-color: #134087;
+  scrollbar-track-color: #011433;
+  scrollbar-arrow-color: #011433;
+  scrollbar-shadow-color:#011433;
+  //scrollbar-dark-shadow-color: #011433;
+}
+```
+滚动条相关属性
+https://zhuanlan.zhihu.com/p/382066094
+
+
+### webkit
+```css
+::-webkit-scrollbar 滚动条整体，可以设置宽度等①
+::-webkit-scrollbar-button 滚动条两端的按钮②
+::-webkit-scrollbar-track 外层轨道③
+::-webkit-scrollbar-track-piece 内层滚动槽④
+::-webkit-scrollbar-thumb 滚动的滑块⑤
+::-webkit-scrollbar-corner 边角⑥
+::-webkit-resizer 下角拖动块的样式⑦
+```
+
+### IE取消隐藏滚动条
+
+```css
+scrollbar-width: none; /* Firefox */
+-ms-overflow-style: none; /* IE 10+ */
+::-webkit-scrollbar {
+  display: none; /* Chrome Safari */
+}
+```
+
+## 参考文档
+
+https://winney07.github.io/2019/12/17/%E8%87%AA%E5%AE%9A%E4%B9%89%E6%BB%9A%E5%8A%A8%E6%9D%A1%E6%A0%B7%E5%BC%8F%EF%BC%8C%E5%85%BC%E5%AE%B9IE%E6%B5%8F%E8%A7%88%E5%99%A8/
+
